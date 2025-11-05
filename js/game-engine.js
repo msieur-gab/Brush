@@ -28,6 +28,10 @@ class GameEngine {
     // MediaPipe controller
     this.mediapipeController = null;
 
+    // Zone manager for systematic brushing
+    this.zoneManager = new ToothZoneManager();
+    this.zoneMode = true; // Enable zone-based gameplay
+
     // Particle effects
     this.particles = [];
 
@@ -105,6 +109,11 @@ class GameEngine {
     this.particles = [];
     this.gameEnded = false;
     this.isPaused = false;
+
+    // Reset zone manager
+    if (this.zoneManager) {
+      this.zoneManager.reset();
+    }
   }
 
   gameLoop(timestamp = 0) {
@@ -140,6 +149,9 @@ class GameEngine {
 
     // Update brush cursor position from MediaPipe
     this.updateBrushCursor();
+
+    // Update zones (define/update based on mouth position)
+    this.updateZones();
 
     // Update creatures
     this.updateCreatures();
@@ -178,6 +190,83 @@ class GameEngine {
     this.brushCursor.trail.forEach((point, index) => {
       point.alpha = (index + 1) / this.brushCursor.trail.length;
     });
+  }
+
+  updateZones() {
+    if (!this.zoneMode || !this.mediapipeController) return;
+
+    // Get mouth position and dimensions
+    const mouthPos = this.mediapipeController.getMouthPosition();
+    const mouthDimensions = this.mediapipeController.getMouthDimensions();
+
+    if (!mouthPos || !mouthDimensions) return;
+
+    // Define/update zones based on current mouth position
+    this.zoneManager.defineZones(
+      mouthPos,
+      mouthDimensions,
+      this.logicalWidth,
+      this.logicalHeight
+    );
+
+    // Check if brush is in any zone
+    const brushPosition = {
+      x: this.brushCursor.x,
+      y: this.brushCursor.y
+    };
+
+    const zoneCheck = this.zoneManager.checkBrushInZone(brushPosition);
+
+    // If brush is in the active zone, update its health based on brushing quality
+    if (zoneCheck.inZone && zoneCheck.isActiveZone) {
+      const circularMotion = this.mediapipeController.getCircularMotion();
+
+      // Only update zone health if user is making circular motions
+      if (circularMotion && circularMotion.isCircular) {
+        const updateResult = this.zoneManager.updateZoneHealth(
+          zoneCheck.zone,
+          circularMotion
+        );
+
+        // Check if zone just completed
+        if (updateResult.complete) {
+          // Add bonus points for completing a zone
+          this.score += 100;
+
+          // Create celebration particles
+          this.createZoneCompletionParticles(zoneCheck.zoneData.center);
+
+          // Move to next zone
+          const nextZone = this.zoneManager.moveToNextZone();
+
+          if (nextZone.allComplete) {
+            // All zones complete! End game early with bonus
+            this.score += 500; // Completion bonus
+            this.endGame();
+          }
+        }
+      }
+    }
+  }
+
+  createZoneCompletionParticles(position) {
+    // Create burst of particles at zone center
+    for (let i = 0; i < 20; i++) {
+      const angle = (Math.PI * 2 * i) / 20;
+      const speed = 2 + Math.random() * 3;
+
+      this.particles.push({
+        x: position.x,
+        y: position.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 4 + Math.random() * 4,
+        color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+        alpha: 1,
+        decay: 0.02,
+        isPulse: false
+      });
+    }
   }
 
   spawnCreature() {
@@ -452,6 +541,11 @@ class GameEngine {
     // Draw brushing zone indicator
     this.drawBrushingZone();
 
+    // Draw tooth zones (if zone mode enabled)
+    if (this.zoneMode) {
+      this.drawZones();
+    }
+
     // Draw brush trail
     this.drawBrushTrail();
 
@@ -623,6 +717,153 @@ class GameEngine {
     this.ctx.restore();
   }
 
+  drawZones() {
+    if (!this.zoneManager) return;
+
+    const zones = this.zoneManager.getAllZones();
+    if (!zones || Object.keys(zones).length === 0) return;
+
+    const activeZone = this.zoneManager.getActiveZone();
+    const zoneHealth = this.zoneManager.getZoneHealthMap();
+    const brushPosition = { x: this.brushCursor.x, y: this.brushCursor.y };
+    const currentZoneCheck = this.zoneManager.checkBrushInZone(brushPosition);
+
+    this.ctx.save();
+
+    // Draw all zones
+    for (const [zoneName, zoneData] of Object.entries(zones)) {
+      const isActive = activeZone && zoneName === activeZone.zoneName;
+      const health = zoneHealth[zoneName]?.health || 0;
+      const isComplete = zoneHealth[zoneName]?.complete || false;
+      const isBrushInZone = currentZoneCheck.inZone && currentZoneCheck.zone === zoneName;
+
+      // Determine zone appearance based on state
+      let opacity = 0.2;
+      let lineWidth = 2;
+
+      if (isActive) {
+        opacity = 0.5; // Active zone is more visible
+        lineWidth = 4;
+
+        if (isBrushInZone) {
+          opacity = 0.7; // Even more visible when brushing in active zone
+        }
+      } else if (isComplete) {
+        opacity = 0.15; // Completed zones fade out
+      }
+
+      // Draw zone circle
+      this.ctx.beginPath();
+      this.ctx.arc(zoneData.center.x, zoneData.center.y, zoneData.radius, 0, Math.PI * 2);
+
+      // Fill with zone color
+      const fillColor = zoneData.color.replace(/[\d.]+\)$/, `${opacity})`);
+      this.ctx.fillStyle = fillColor;
+      this.ctx.fill();
+
+      // Stroke with zone color (brighter for active)
+      const strokeOpacity = isActive ? 0.9 : 0.4;
+      const strokeColor = zoneData.color.replace(/[\d.]+\)$/, `${strokeOpacity})`);
+      this.ctx.strokeStyle = strokeColor;
+      this.ctx.lineWidth = lineWidth;
+      this.ctx.stroke();
+
+      // Draw health progress bar inside zone
+      if (health > 0 && !isComplete) {
+        const barWidth = zoneData.radius * 1.2;
+        const barHeight = 8;
+        const barX = zoneData.center.x - barWidth / 2;
+        const barY = zoneData.center.y + zoneData.radius - 30;
+
+        // Background bar
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        this.ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        // Progress bar
+        const progressWidth = (health / 100) * barWidth;
+        const gradient = this.ctx.createLinearGradient(barX, barY, barX + progressWidth, barY);
+        gradient.addColorStop(0, 'rgba(80, 227, 194, 0.8)');
+        gradient.addColorStop(1, 'rgba(72, 219, 251, 0.8)');
+        this.ctx.fillStyle = gradient;
+        this.ctx.fillRect(barX, barY, progressWidth, barHeight);
+
+        // Progress text
+        this.ctx.font = 'bold 14px sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'bottom';
+        this.ctx.fillStyle = 'white';
+        this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.lineWidth = 3;
+        const healthText = `${Math.round(health)}%`;
+        this.ctx.strokeText(healthText, zoneData.center.x, barY - 2);
+        this.ctx.fillText(healthText, zoneData.center.x, barY - 2);
+      }
+
+      // Draw completion checkmark
+      if (isComplete) {
+        this.ctx.font = 'bold 40px sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = 'rgba(80, 227, 194, 0.9)';
+        this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeText('✓', zoneData.center.x, zoneData.center.y);
+        this.ctx.fillText('✓', zoneData.center.x, zoneData.center.y);
+      }
+
+      // Draw zone label (only for active zone or when hovering)
+      if (isActive || isBrushInZone) {
+        this.ctx.font = 'bold 16px sans-serif';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillStyle = 'white';
+        this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.lineWidth = 3;
+        this.ctx.strokeText(zoneData.label, zoneData.center.x, zoneData.center.y - zoneData.radius + 20);
+        this.ctx.fillText(zoneData.label, zoneData.center.x, zoneData.center.y - zoneData.radius + 20);
+      }
+    }
+
+    // Draw active zone instruction at top of screen
+    if (activeZone && activeZone.zoneData) {
+      const instructionY = 100;
+
+      // Background
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+      this.ctx.fillRect(
+        this.logicalWidth / 2 - 200,
+        instructionY - 35,
+        400,
+        70
+      );
+
+      // Zone emoji
+      this.ctx.font = '40px serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(activeZone.zoneData.emoji, this.logicalWidth / 2, instructionY - 10);
+
+      // Instruction text
+      this.ctx.font = 'bold 18px sans-serif';
+      this.ctx.fillStyle = 'white';
+      this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      this.ctx.lineWidth = 3;
+      const instruction = activeZone.zoneData.instruction;
+      this.ctx.strokeText(instruction, this.logicalWidth / 2, instructionY + 20);
+      this.ctx.fillText(instruction, this.logicalWidth / 2, instructionY + 20);
+
+      // Progress indicator
+      const stats = this.zoneManager.getZoneStats();
+      const progressText = `Zone ${activeZone.index + 1}/${stats.totalZones} | ${stats.completedZones} Complete`;
+      this.ctx.font = 'bold 14px sans-serif';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      this.ctx.strokeText(progressText, this.logicalWidth / 2, instructionY - 25);
+      this.ctx.fillText(progressText, this.logicalWidth / 2, instructionY - 25);
+    }
+
+    this.ctx.restore();
+  }
+
   drawCreatures() {
     this.creatures.forEach(creature => {
       this.ctx.save();
@@ -774,7 +1015,7 @@ class GameEngine {
   }
 
   getGameState() {
-    return {
+    const state = {
       score: this.score,
       creaturesDestroyed: this.creaturesDestroyed,
       duration: this.elapsedTime,
@@ -782,5 +1023,13 @@ class GameEngine {
       requiredDuration: this.requiredDuration,
       gameEnded: this.gameEnded
     };
+
+    // Add zone statistics if zone mode is enabled
+    if (this.zoneMode && this.zoneManager) {
+      state.zoneStats = this.zoneManager.getZoneStats();
+      state.activeZone = this.zoneManager.getActiveZone();
+    }
+
+    return state;
   }
 }
