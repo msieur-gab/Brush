@@ -35,6 +35,8 @@ class GameCanvas extends HTMLElement {
           display: flex;
           align-items: center;
           justify-content: center;
+          background: #000;
+          z-index: 1;
         }
 
         #camera-feed {
@@ -42,8 +44,8 @@ class GameCanvas extends HTMLElement {
           height: 100%;
           object-fit: cover;
           transform: scaleX(-1);
-          opacity: 0.6;
-          z-index: 1;
+          opacity: 0.7;
+          position: relative;
         }
 
         #game-canvas {

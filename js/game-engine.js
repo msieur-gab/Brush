@@ -42,11 +42,15 @@ class GameEngine {
 
     // Brush cursor
     this.brushCursor = {
-      x: this.canvas.width / 2,
-      y: this.canvas.height / 2,
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
       size: 60,
       trail: []
     };
+
+    // Logical dimensions for game calculations (initialized in resizeCanvas)
+    this.logicalWidth = window.innerWidth;
+    this.logicalHeight = window.innerHeight;
 
     // Bind resize handler
     window.addEventListener('resize', () => this.resizeCanvas());
@@ -56,8 +60,25 @@ class GameEngine {
   }
 
   resizeCanvas() {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
+    // Get actual screen dimensions
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    // Set canvas display size
+    this.canvas.style.width = width + 'px';
+    this.canvas.style.height = height + 'px';
+
+    // Set canvas buffer size (for high-DPI screens)
+    const dpr = window.devicePixelRatio || 1;
+    this.canvas.width = width * dpr;
+    this.canvas.height = height * dpr;
+
+    // Scale context to match DPR
+    this.ctx.scale(dpr, dpr);
+
+    // Store logical dimensions for game calculations
+    this.logicalWidth = width;
+    this.logicalHeight = height;
   }
 
   async start(profile, mediapipeController) {
@@ -136,10 +157,10 @@ class GameEngine {
     const handPosition = this.mediapipeController.getHandPosition();
 
     if (handPosition) {
-      // Convert normalized coordinates (0-1) to canvas coordinates
+      // Convert normalized coordinates (0-1) to screen coordinates
       // Flip X for mirror effect
-      const x = (1 - handPosition.x) * this.canvas.width;
-      const y = handPosition.y * this.canvas.height;
+      const x = (1 - handPosition.x) * this.logicalWidth;
+      const y = handPosition.y * this.logicalHeight;
 
       this.brushCursor.x = x;
       this.brushCursor.y = y;
@@ -171,28 +192,28 @@ class GameEngine {
     // Position based on side
     switch (side) {
       case 0: // Top
-        x = Math.random() * this.canvas.width;
+        x = Math.random() * this.logicalWidth;
         y = -type.size;
-        targetX = Math.random() * this.canvas.width;
-        targetY = this.canvas.height + type.size;
+        targetX = Math.random() * this.logicalWidth;
+        targetY = this.logicalHeight + type.size;
         break;
       case 1: // Right
-        x = this.canvas.width + type.size;
-        y = Math.random() * this.canvas.height;
+        x = this.logicalWidth + type.size;
+        y = Math.random() * this.logicalHeight;
         targetX = -type.size;
-        targetY = Math.random() * this.canvas.height;
+        targetY = Math.random() * this.logicalHeight;
         break;
       case 2: // Bottom
-        x = Math.random() * this.canvas.width;
-        y = this.canvas.height + type.size;
-        targetX = Math.random() * this.canvas.width;
+        x = Math.random() * this.logicalWidth;
+        y = this.logicalHeight + type.size;
+        targetX = Math.random() * this.logicalWidth;
         targetY = -type.size;
         break;
       case 3: // Left
         x = -type.size;
-        y = Math.random() * this.canvas.height;
-        targetX = this.canvas.width + type.size;
-        targetY = Math.random() * this.canvas.height;
+        y = Math.random() * this.logicalHeight;
+        targetX = this.logicalWidth + type.size;
+        targetY = Math.random() * this.logicalHeight;
         break;
     }
 
@@ -235,9 +256,9 @@ class GameEngine {
     this.creatures = this.creatures.filter(creature => {
       const margin = 100;
       return creature.x > -margin &&
-             creature.x < this.canvas.width + margin &&
+             creature.x < this.logicalWidth + margin &&
              creature.y > -margin &&
-             creature.y < this.canvas.height + margin &&
+             creature.y < this.logicalHeight + margin &&
              creature.health > 0;
     });
   }
@@ -358,7 +379,7 @@ class GameEngine {
 
   render() {
     // Clear canvas
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.clearRect(0, 0, this.logicalWidth, this.logicalHeight);
 
     // Draw brush trail
     this.drawBrushTrail();
@@ -484,10 +505,10 @@ class GameEngine {
   drawDirectionIndicators() {
     // Draw subtle arrows at screen edges to show valid directions
     const arrows = [
-      { x: this.canvas.width / 2, y: 30, text: '↓', alpha: 0.3 },
-      { x: this.canvas.width - 30, y: this.canvas.height / 2, text: '←', alpha: 0.3 },
-      { x: this.canvas.width / 2, y: this.canvas.height - 30, text: '↑', alpha: 0.3 },
-      { x: 30, y: this.canvas.height / 2, text: '→', alpha: 0.3 }
+      { x: this.logicalWidth / 2, y: 30, text: '↓', alpha: 0.3 },
+      { x: this.logicalWidth - 30, y: this.logicalHeight / 2, text: '←', alpha: 0.3 },
+      { x: this.logicalWidth / 2, y: this.logicalHeight - 30, text: '↑', alpha: 0.3 },
+      { x: 30, y: this.logicalHeight / 2, text: '→', alpha: 0.3 }
     ];
 
     this.ctx.font = 'bold 24px sans-serif';

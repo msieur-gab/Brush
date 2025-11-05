@@ -36,15 +36,20 @@ class MediaPipeController {
     // Set up results callback
     this.hands.onResults((results) => this.onResults(results));
 
-    // Initialize camera
+    // Determine camera resolution based on screen orientation
+    const isPortrait = window.innerHeight > window.innerWidth;
+    const cameraWidth = isPortrait ? 720 : 1280;
+    const cameraHeight = isPortrait ? 1280 : 720;
+
+    // Initialize camera with appropriate resolution for mobile
     this.camera = new Camera(this.videoElement, {
       onFrame: async () => {
         if (this.isTracking) {
           await this.hands.send({ image: this.videoElement });
         }
       },
-      width: 1280,
-      height: 720,
+      width: cameraWidth,
+      height: cameraHeight,
       facingMode: 'user' // Front camera
     });
 
