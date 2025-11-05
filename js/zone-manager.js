@@ -13,7 +13,8 @@ class ToothZoneManager {
     this.zoneSequence = []; // Order in which to brush zones
     this.currentZoneIndex = 0;
     this.requiredHealthPerZone = 100; // Health needed to complete a zone
-    this.healthIncreaseRate = 2; // Points per frame with good brushing
+    this.healthIncreaseRate = 1.5; // Base points per frame (INCREASED for easier gameplay)
+    this.movementIncreaseRate = 0.8; // Points for ANY movement in zone (partial credit)
   }
 
   /**
@@ -33,8 +34,9 @@ class ToothZoneManager {
     const mouthWidth = mouthDimensions.width * canvasWidth;
     const mouthHeight = mouthDimensions.height * canvasHeight;
 
-    // Zone radius (how large each zone is)
-    const zoneRadius = Math.max(mouthWidth, mouthHeight) * 1.5;
+    // Zone radius (how large each zone is) - INCREASED for easier hitting
+    // Was 1.5x, now 2.5x for much larger hit areas
+    const zoneRadius = Math.max(mouthWidth, mouthHeight) * 2.5;
 
     // Distance from mouth center to outer zones
     const outerDistance = zoneRadius * 0.8;
@@ -199,25 +201,30 @@ class ToothZoneManager {
    * Update zone health based on brushing quality
    * @param {string} zoneName - Name of the zone being brushed
    * @param {Object} circularMotionData - Data from CircleDetector
+   * @param {boolean} isMoving - Is there any hand movement detected
    * @returns {Object} Update result with health, complete status, feedback
    */
-  updateZoneHealth(zoneName, circularMotionData) {
+  updateZoneHealth(zoneName, circularMotionData, isMoving = false) {
     if (!this.zones[zoneName]) {
       return { health: 0, complete: false, feedback: 'Invalid zone' };
     }
 
     const currentHealth = this.zoneHealth.get(zoneName) || 0;
 
-    // Increase health based on circular motion quality
+    // MUCH MORE FORGIVING health increase system
     let healthIncrease = 0;
+
     if (circularMotionData && circularMotionData.isCircular) {
-      // Perfect circular motion = full increase rate
+      // Excellent circular motion = maximum increase
       healthIncrease = this.healthIncreaseRate * circularMotionData.quality;
-    } else if (circularMotionData && circularMotionData.quality > 0.5) {
-      // Decent motion = partial increase
-      healthIncrease = this.healthIncreaseRate * 0.5 * circularMotionData.quality;
+    } else if (circularMotionData && circularMotionData.quality > 0.3) {
+      // ANY decent motion gets partial credit (was 0.5, now 0.3 - more forgiving!)
+      healthIncrease = this.healthIncreaseRate * 0.6 * circularMotionData.quality;
+    } else if (isMoving) {
+      // Even if not circular, give credit for ANY movement in the zone!
+      // This is critical for real-world brushing where hand orientation varies
+      healthIncrease = this.movementIncreaseRate;
     }
-    // No increase if motion quality is poor
 
     const newHealth = Math.min(100, currentHealth + healthIncrease);
     this.zoneHealth.set(zoneName, newHealth);
@@ -240,22 +247,18 @@ class ToothZoneManager {
    * Get feedback message based on zone health
    */
   getHealthFeedback(health, circularMotionData) {
-    // If not making circular motions
-    if (!circularMotionData || !circularMotionData.isCircular) {
-      if (circularMotionData && circularMotionData.quality > 0.5) {
-        return 'Keep making circles!';
-      }
-      return 'Make circular motions!';
-    }
+    // More encouraging feedback - focus on progress!
 
-    // Based on health progress
-    if (health < 25) {
-      return 'Great start! Keep going!';
-    } else if (health < 50) {
-      return 'Good circles! Continue!';
-    } else if (health < 75) {
-      return 'Excellent! Almost there!';
-    } else if (health < 95) {
+    // Based on health progress (removed circular motion requirement from feedback)
+    if (health < 15) {
+      return 'Good! Keep brushing!';
+    } else if (health < 35) {
+      return 'Great job! Keep going!';
+    } else if (health < 60) {
+      return 'Awesome! Halfway there!';
+    } else if (health < 85) {
+      return 'Excellent! Almost done!';
+    } else if (health < 100) {
       return 'Perfect! Finish this zone!';
     } else {
       return 'Zone Complete! ✨';

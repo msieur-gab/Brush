@@ -337,9 +337,10 @@ class CircleDetector {
     const angularCoverage = this.calculateAngularCoverage(this.positionHistory, center);
 
     // Determine if this is a circular motion
-    // Consistency > 0.7 means radius is fairly uniform
-    // Angular coverage > 270 means they went most of the way around
-    const isCircular = consistency > 0.7 && angularCoverage > 270;
+    // RELAXED THRESHOLDS for real-world brushing
+    // Consistency > 0.5 means reasonably circular (was 0.7 - too strict!)
+    // Angular coverage > 180 means at least half a circle (was 270 - too strict!)
+    const isCircular = consistency > 0.5 && angularCoverage > 180;
 
     // Calculate completeness percentage (0-100%)
     const completeness = Math.min(100, (angularCoverage / 360) * 100);

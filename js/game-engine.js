@@ -59,6 +59,14 @@ class GameEngine {
     // Bind resize handler
     window.addEventListener('resize', () => this.resizeCanvas());
 
+    // Debug mode toggle (press D key)
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'd' || e.key === 'D') {
+        window.DEBUG_MODE = !window.DEBUG_MODE;
+        console.log('Debug mode:', window.DEBUG_MODE ? 'ON' : 'OFF');
+      }
+    });
+
     // Animation frame
     this.animationFrameId = null;
   }
@@ -220,12 +228,16 @@ class GameEngine {
     // If brush is in the active zone, update its health based on brushing quality
     if (zoneCheck.inZone && zoneCheck.isActiveZone) {
       const circularMotion = this.mediapipeController.getCircularMotion();
+      const isMoving = this.mediapipeController.isMoving(0.005); // Lower threshold for movement detection
 
-      // Only update zone health if user is making circular motions
-      if (circularMotion && circularMotion.isCircular) {
+      // CRITICAL FIX: Give credit for ANY movement in the zone!
+      // This accounts for different hand orientations when brushing left vs right side
+      // Right-handed people show different finger positions on each side
+      if (circularMotion || isMoving) {
         const updateResult = this.zoneManager.updateZoneHealth(
           zoneCheck.zone,
-          circularMotion
+          circularMotion,
+          isMoving
         );
 
         // Check if zone just completed
@@ -861,7 +873,80 @@ class GameEngine {
       this.ctx.fillText(progressText, this.logicalWidth / 2, instructionY - 25);
     }
 
+    // DEBUG MODE: Show detection information
+    if (window.DEBUG_MODE || window.ALWAYS_SHOW_DEBUG) {
+      this.drawZoneDebugInfo(currentZoneCheck);
+    }
+
     this.ctx.restore();
+  }
+
+  drawZoneDebugInfo(zoneCheck) {
+    const debugY = this.logicalHeight - 150;
+    const debugX = 20;
+
+    // Background panel
+    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    this.ctx.fillRect(debugX - 10, debugY - 10, 350, 140);
+
+    this.ctx.font = '12px monospace';
+    this.ctx.textAlign = 'left';
+    this.ctx.fillStyle = 'white';
+
+    let lineY = debugY;
+    const lineHeight = 18;
+
+    // Title
+    this.ctx.font = 'bold 14px monospace';
+    this.ctx.fillText('DEBUG INFO (press D to toggle)', debugX, lineY);
+    lineY += lineHeight + 5;
+
+    this.ctx.font = '12px monospace';
+
+    // Zone status
+    this.ctx.fillStyle = zoneCheck.inZone ? '#4CAF50' : '#FF5252';
+    this.ctx.fillText(`IN ZONE: ${zoneCheck.inZone ? 'YES' : 'NO'}`, debugX, lineY);
+    lineY += lineHeight;
+
+    if (zoneCheck.inZone) {
+      this.ctx.fillStyle = zoneCheck.isActiveZone ? '#4CAF50' : '#FFA726';
+      this.ctx.fillText(`ACTIVE ZONE: ${zoneCheck.isActiveZone ? 'YES' : 'NO'}`, debugX, lineY);
+      lineY += lineHeight;
+    }
+
+    // Movement status
+    const isMoving = this.mediapipeController ? this.mediapipeController.isMoving(0.005) : false;
+    const speed = this.mediapipeController ? this.mediapipeController.getMovementSpeed() : 0;
+    this.ctx.fillStyle = isMoving ? '#4CAF50' : '#FF5252';
+    this.ctx.fillText(`MOVING: ${isMoving ? 'YES' : 'NO'} (${(speed * 1000).toFixed(1)})`, debugX, lineY);
+    lineY += lineHeight;
+
+    // Circular motion status
+    const circularMotion = this.mediapipeController ? this.mediapipeController.getCircularMotion() : null;
+    if (circularMotion) {
+      this.ctx.fillStyle = circularMotion.isCircular ? '#4CAF50' : '#FFA726';
+      this.ctx.fillText(`CIRCULAR: ${circularMotion.isCircular ? 'YES' : 'NO'}`, debugX, lineY);
+      lineY += lineHeight;
+
+      this.ctx.fillStyle = 'white';
+      this.ctx.fillText(`Quality: ${(circularMotion.quality * 100).toFixed(0)}% | Coverage: ${Math.round(circularMotion.angularCoverage)}°`, debugX, lineY);
+      lineY += lineHeight;
+    }
+
+    // Health increase rate
+    if (zoneCheck.inZone && zoneCheck.isActiveZone) {
+      let healthRate = 0;
+      if (circularMotion && circularMotion.isCircular) {
+        healthRate = 1.5 * circularMotion.quality;
+      } else if (circularMotion && circularMotion.quality > 0.3) {
+        healthRate = 1.5 * 0.6 * circularMotion.quality;
+      } else if (isMoving) {
+        healthRate = 0.8;
+      }
+
+      this.ctx.fillStyle = healthRate > 0.5 ? '#4CAF50' : '#FFA726';
+      this.ctx.fillText(`HEALTH RATE: ${healthRate.toFixed(2)} pts/frame`, debugX, lineY);
+    }
   }
 
   drawCreatures() {
