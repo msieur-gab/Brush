@@ -17,6 +17,12 @@ class GameResults extends HTMLElement {
   render() {
     this.innerHTML = `
       <style>
+        :host {
+          display: block;
+          width: 100%;
+          height: 100%;
+        }
+
         .results-container {
           width: 100%;
           height: 100%;
@@ -52,6 +58,12 @@ class GameResults extends HTMLElement {
           overflow-x: hidden;
           -webkit-overflow-scrolling: touch;
           padding: var(--spacing-md);
+          min-height: 0;
+          position: relative;
+        }
+
+        .results-content > * {
+          max-width: 100%;
         }
 
         .results-footer {
