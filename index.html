@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Brush Battle - Make Toothbrushing Fun!</title>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/styles.css">
+
+  <!-- Dexie.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>
+
+  <!-- MediaPipe from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <main id="app" class="app-container">
+
+    <!-- Profile Selection Screen -->
+    <section id="profile-screen" class="screen active" aria-label="Profile Selection">
+      <header class="screen-header">
+        <h1>🦷 Brush Battle</h1>
+        <p>Choose your brushing hero!</p>
+      </header>
+
+      <profile-selector></profile-selector>
+
+      <footer class="screen-footer">
+        <button type="button" class="btn btn-secondary" id="settings-btn" aria-label="Settings">
+          ⚙️ Settings
+        </button>
+      </footer>
+    </section>
+
+    <!-- Game Screen -->
+    <section id="game-screen" class="screen" aria-label="Game Play">
+      <game-canvas></game-canvas>
+    </section>
+
+    <!-- Results Screen -->
+    <section id="results-screen" class="screen" aria-label="Game Results">
+      <game-results></game-results>
+    </section>
+
+    <!-- Settings Modal -->
+    <dialog id="settings-modal" class="modal">
+      <settings-panel></settings-panel>
+    </dialog>
+
+  </main>
+
+  <!-- Core scripts -->
+  <script src="js/database.js"></script>
+  <script src="js/game-engine.js"></script>
+  <script src="js/mediapipe-controller.js"></script>
+
+  <!-- Web Components -->
+  <script src="components/profile-selector.js"></script>
+  <script src="components/game-canvas.js"></script>
+  <script src="components/game-results.js"></script>
+  <script src="components/settings-panel.js"></script>
+
+  <!-- Main app controller -->
+  <script src="js/app.js"></script>
+</body>
+</html>
