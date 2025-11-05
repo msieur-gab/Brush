@@ -22,25 +22,17 @@ class GameResults extends HTMLElement {
           height: 100%;
           display: flex;
           flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: var(--spacing-lg);
           background: linear-gradient(135deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
-        }
-
-        .results-card {
-          background: rgba(255, 255, 255, 0.95);
-          border-radius: var(--radius-lg);
-          padding: var(--spacing-xl);
-          max-width: 500px;
-          width: 100%;
-          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-          animation: slideInUp 0.5s ease;
+          overflow: hidden;
         }
 
         .results-header {
+          flex-shrink: 0;
           text-align: center;
-          margin-bottom: var(--spacing-lg);
+          padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
+          background: rgba(255, 255, 255, 0.95);
+          box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+          z-index: 10;
         }
 
         .results-title {
@@ -52,6 +44,22 @@ class GameResults extends HTMLElement {
         .results-subtitle {
           font-size: 1.2rem;
           color: #666;
+        }
+
+        .results-content {
+          flex: 1;
+          overflow-y: auto;
+          overflow-x: hidden;
+          -webkit-overflow-scrolling: touch;
+          padding: var(--spacing-md);
+        }
+
+        .results-footer {
+          flex-shrink: 0;
+          padding: var(--spacing-md);
+          background: rgba(255, 255, 255, 0.95);
+          box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+          z-index: 10;
         }
 
         .profile-info {
@@ -148,27 +156,49 @@ class GameResults extends HTMLElement {
         }
 
         .history-list {
-          max-height: 150px;
-          overflow-y: auto;
+          background: rgba(255, 255, 255, 0.5);
+          border-radius: var(--radius-md);
+          padding: var(--spacing-xs);
         }
 
         .history-item {
           display: flex;
           justify-content: space-between;
-          padding: var(--spacing-xs) var(--spacing-sm);
-          border-bottom: 1px solid #eee;
+          align-items: center;
+          padding: var(--spacing-sm);
+          border-bottom: 1px solid rgba(0, 0, 0, 0.1);
           font-size: 0.9rem;
           color: var(--text-dark);
+          background: rgba(255, 255, 255, 0.7);
+          margin-bottom: var(--spacing-xs);
+          border-radius: var(--radius-sm);
         }
 
         .history-item:last-child {
-          border-bottom: none;
+          margin-bottom: 0;
         }
 
         .actions {
           display: flex;
           flex-direction: column;
           gap: var(--spacing-sm);
+        }
+
+        .scroll-indicator {
+          text-align: center;
+          color: rgba(0, 0, 0, 0.5);
+          font-size: 0.85rem;
+          padding: var(--spacing-xs);
+          animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+          0%, 100% {
+            transform: translateY(0);
+          }
+          50% {
+            transform: translateY(-5px);
+          }
         }
 
         .encouragement {
@@ -181,14 +211,22 @@ class GameResults extends HTMLElement {
       </style>
 
       <div class="results-container">
-        <div class="results-card">
-          <div class="results-header">
-            <div class="results-title" id="results-title">Great Job!</div>
-            <div class="results-subtitle" id="results-subtitle">You completed your brushing session!</div>
-          </div>
+        <!-- Fixed Header -->
+        <div class="results-header">
+          <div class="results-title" id="results-title">Great Job!</div>
+          <div class="results-subtitle" id="results-subtitle">You completed your brushing session!</div>
+        </div>
 
-          <div id="results-content">
-            <!-- Content will be populated dynamically -->
+        <!-- Scrollable Content -->
+        <div class="results-content" id="results-content">
+          <!-- Content will be populated dynamically -->
+        </div>
+
+        <!-- Fixed Footer with Actions -->
+        <div class="results-footer">
+          <div class="actions" id="results-actions">
+            <button class="btn btn-primary" id="play-again-btn">Play Again</button>
+            <button class="btn btn-secondary" id="change-profile-btn">Change Profile</button>
           </div>
         </div>
       </div>
@@ -202,8 +240,8 @@ class GameResults extends HTMLElement {
     // Get overall profile stats
     const profileStats = await database.getProfileStats(profile.id);
 
-    // Get recent sessions
-    const recentSessions = await database.getSessionsByProfile(profile.id, 5);
+    // Get recent sessions - show more since we have scrolling now!
+    const recentSessions = await database.getSessionsByProfile(profile.id, 20);
 
     // Generate achievements
     const achievements = this.generateAchievements(stats, profileStats);
@@ -252,27 +290,37 @@ class GameResults extends HTMLElement {
         </div>
       ` : ''}
 
-      ${recentSessions.length > 1 ? `
+      ${recentSessions.length > 0 ? `
         <div class="recent-history">
-          <div class="history-title">Recent Sessions</div>
+          <div class="history-title">📊 Brushing History (${recentSessions.length} sessions)</div>
           <div class="history-list">
-            ${recentSessions.map(session => `
+            ${recentSessions.map((session, index) => `
               <div class="history-item">
-                <span>${new Date(session.createdAt).toLocaleDateString()}</span>
+                <span>${index === 0 ? '🆕 ' : ''}${new Date(session.createdAt).toLocaleDateString()} ${new Date(session.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                 <span>⭐ ${session.score} | 👾 ${session.creaturesDestroyed}</span>
               </div>
             `).join('')}
           </div>
+          ${recentSessions.length > 5 ? '<div class="scroll-indicator">👆 Scroll to see all sessions</div>' : ''}
         </div>
       ` : ''}
 
-      <div class="actions">
-        <button class="btn btn-primary" id="play-again-btn">Play Again</button>
-        <button class="btn btn-secondary" id="change-profile-btn">Change Profile</button>
-      </div>
+      <!-- Overall Stats Summary -->
+      ${profileStats.totalSessions > 1 ? `
+        <div class="recent-history">
+          <div class="history-title">📈 Overall Stats</div>
+          <div class="profile-info" style="flex-direction: column; gap: var(--spacing-xs);">
+            <div>Total Brushing Sessions: <strong>${profileStats.totalSessions}</strong></div>
+            <div>Total Points Earned: <strong>⭐ ${profileStats.totalScore}</strong></div>
+            <div>Total Creatures Defeated: <strong>👾 ${profileStats.totalCreatures}</strong></div>
+            <div>Average Score: <strong>${profileStats.averageScore}</strong></div>
+            <div>Best Score: <strong>🏆 ${profileStats.bestScore}</strong></div>
+          </div>
+        </div>
+      ` : ''}
     `;
 
-    // Attach event listeners
+    // Attach event listeners to footer buttons
     this.querySelector('#play-again-btn')?.addEventListener('click', () => {
       this.dispatchEvent(new CustomEvent('play-again', {
         bubbles: true,
