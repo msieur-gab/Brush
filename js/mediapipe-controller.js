@@ -25,6 +25,10 @@ class MediaPipeController {
 
     // Frame counter for alternating detection
     this.frameCount = 0;
+
+    // Circular motion detection
+    this.circleDetector = new CircleDetector();
+    this.currentCircularMotion = null;
   }
 
   async initialize(videoElement) {
@@ -122,6 +126,9 @@ class MediaPipeController {
           y: this.currentHandPosition.y - this.previousHandPosition.y
         };
       }
+
+      // Detect circular motion patterns
+      this.currentCircularMotion = this.circleDetector.detectCircularMotion(this.currentHandPosition);
     } else {
       // No hand detected - keep last known position briefly
       // Don't clear immediately to avoid flickering
@@ -234,6 +241,10 @@ class MediaPipeController {
     return this.velocity;
   }
 
+  getCircularMotion() {
+    return this.currentCircularMotion;
+  }
+
   setOnResultsCallback(callback) {
     this.onResultsCallback = callback;
   }
@@ -258,5 +269,189 @@ class MediaPipeController {
 
   resume() {
     this.isTracking = true;
+  }
+}
+
+/**
+ * CircleDetector
+ * Detects circular brushing motions from hand tracking data
+ * Based on dental guidelines for proper brushing technique
+ */
+class CircleDetector {
+  constructor(maxHistoryLength = 15, targetRadius = 40) {
+    this.positionHistory = []; // Last N positions
+    this.maxHistoryLength = maxHistoryLength;
+    this.targetRadius = targetRadius; // Target radius in normalized coordinates
+    this.lastCircleComplete = false;
+  }
+
+  /**
+   * Main detection method - call this every frame with current position
+   * @param {Object} currentPosition - {x, y} in normalized coordinates (0-1)
+   * @returns {Object} Detection result with isCircular, completeness, quality, etc.
+   */
+  detectCircularMotion(currentPosition) {
+    if (!currentPosition) {
+      return {
+        isCircular: false,
+        completeness: 0,
+        radius: 0,
+        quality: 0,
+        center: null
+      };
+    }
+
+    // Add current position to history
+    this.positionHistory.push({
+      x: currentPosition.x,
+      y: currentPosition.y,
+      timestamp: Date.now()
+    });
+
+    // Keep only last N positions
+    if (this.positionHistory.length > this.maxHistoryLength) {
+      this.positionHistory.shift();
+    }
+
+    // Need at least 8 points to detect a circle
+    if (this.positionHistory.length < 8) {
+      return {
+        isCircular: false,
+        completeness: 0,
+        radius: 0,
+        quality: 0,
+        center: null
+      };
+    }
+
+    // Calculate center point (centroid) of all positions
+    const center = this.calculateCentroid(this.positionHistory);
+
+    // Calculate average radius from center
+    const avgRadius = this.calculateAverageRadius(this.positionHistory, center);
+
+    // Check if positions form consistent arc (low variance in radius)
+    const consistency = this.calculateRadiusConsistency(this.positionHistory, center, avgRadius);
+
+    // Check angular coverage (did they go around in a circle?)
+    const angularCoverage = this.calculateAngularCoverage(this.positionHistory, center);
+
+    // Determine if this is a circular motion
+    // Consistency > 0.7 means radius is fairly uniform
+    // Angular coverage > 270 means they went most of the way around
+    const isCircular = consistency > 0.7 && angularCoverage > 270;
+
+    // Calculate completeness percentage (0-100%)
+    const completeness = Math.min(100, (angularCoverage / 360) * 100);
+
+    return {
+      isCircular: isCircular,
+      completeness: completeness,
+      radius: avgRadius,
+      quality: consistency,
+      center: center,
+      angularCoverage: angularCoverage,
+      positionCount: this.positionHistory.length
+    };
+  }
+
+  /**
+   * Calculate the centroid (center point) of all positions
+   */
+  calculateCentroid(positions) {
+    const sum = positions.reduce((acc, pos) => ({
+      x: acc.x + pos.x,
+      y: acc.y + pos.y
+    }), { x: 0, y: 0 });
+
+    return {
+      x: sum.x / positions.length,
+      y: sum.y / positions.length
+    };
+  }
+
+  /**
+   * Calculate average radius from center to all positions
+   */
+  calculateAverageRadius(positions, center) {
+    const radii = positions.map(pos =>
+      Math.sqrt(Math.pow(pos.x - center.x, 2) + Math.pow(pos.y - center.y, 2))
+    );
+    return radii.reduce((a, b) => a + b, 0) / radii.length;
+  }
+
+  /**
+   * Calculate how consistent the radius is (0-1, higher = more circular)
+   * Uses standard deviation to measure variance
+   */
+  calculateRadiusConsistency(positions, center, avgRadius) {
+    const radii = positions.map(pos =>
+      Math.sqrt(Math.pow(pos.x - center.x, 2) + Math.pow(pos.y - center.y, 2))
+    );
+
+    // Calculate standard deviation
+    const variance = radii.reduce((sum, r) => sum + Math.pow(r - avgRadius, 2), 0) / radii.length;
+    const stdDev = Math.sqrt(variance);
+
+    // Consistency = 1 - (stdDev / avgRadius)
+    // High consistency = low variance in radius = more circular
+    const consistency = Math.max(0, 1 - (stdDev / avgRadius));
+
+    return consistency;
+  }
+
+  /**
+   * Calculate how much of a circle has been covered (in degrees)
+   * Returns 0-360 representing degrees of arc covered
+   */
+  calculateAngularCoverage(positions, center) {
+    if (positions.length < 2) {
+      return 0;
+    }
+
+    // Calculate angles of all positions relative to center
+    const angles = positions.map(pos =>
+      Math.atan2(pos.y - center.y, pos.x - center.x) * 180 / Math.PI
+    );
+
+    // Normalize to 0-360
+    const normalizedAngles = angles.map(a => a < 0 ? a + 360 : a);
+
+    // Sort angles to find coverage
+    const sortedAngles = [...normalizedAngles].sort((a, b) => a - b);
+
+    // Find largest gap between consecutive angles
+    let maxGap = 0;
+    for (let i = 0; i < sortedAngles.length; i++) {
+      const nextIdx = (i + 1) % sortedAngles.length;
+      let gap = sortedAngles[nextIdx] - sortedAngles[i];
+
+      // Handle wraparound at 360/0
+      if (gap < 0) {
+        gap += 360;
+      }
+
+      maxGap = Math.max(maxGap, gap);
+    }
+
+    // Coverage = 360 - largest gap
+    const coverage = 360 - maxGap;
+
+    return Math.max(0, Math.min(360, coverage));
+  }
+
+  /**
+   * Reset the detector (clear history)
+   */
+  reset() {
+    this.positionHistory = [];
+    this.lastCircleComplete = false;
+  }
+
+  /**
+   * Get the current position history (for debugging/visualization)
+   */
+  getPositionHistory() {
+    return this.positionHistory;
   }
 }

@@ -455,6 +455,9 @@ class GameEngine {
     // Draw brush trail
     this.drawBrushTrail();
 
+    // Draw circular motion visualization
+    this.drawCircularMotion();
+
     // Draw creatures
     this.drawCreatures();
 
@@ -520,6 +523,104 @@ class GameEngine {
       this.ctx.fillStyle = `rgba(255, 255, 255, ${point.alpha * 0.3})`;
       this.ctx.fill();
     });
+  }
+
+  drawCircularMotion() {
+    if (!this.mediapipeController) return;
+
+    const circularMotion = this.mediapipeController.getCircularMotion();
+    if (!circularMotion || !circularMotion.center) return;
+
+    // Convert normalized coordinates to screen coordinates
+    const centerX = (1 - circularMotion.center.x) * this.logicalWidth;
+    const centerY = circularMotion.center.y * this.logicalHeight;
+    const radius = circularMotion.radius * this.logicalWidth;
+
+    // Only draw if we have enough data
+    if (circularMotion.positionCount < 8) return;
+
+    this.ctx.save();
+
+    // Draw circle outline based on quality
+    // Green for good circular motion, yellow for okay, red for poor
+    let color;
+    let feedback = '';
+    if (circularMotion.isCircular) {
+      color = 'rgba(80, 227, 194, 0.8)'; // Teal/green - good!
+      feedback = 'Great circles!';
+    } else if (circularMotion.quality > 0.5) {
+      color = 'rgba(255, 235, 59, 0.7)'; // Yellow - okay
+      feedback = 'Keep going...';
+    } else {
+      color = 'rgba(255, 152, 0, 0.5)'; // Orange - needs work
+      feedback = 'Make circles!';
+    }
+
+    // Draw detected circle outline
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 3;
+    this.ctx.stroke();
+
+    // Draw center point
+    this.ctx.beginPath();
+    this.ctx.arc(centerX, centerY, 5, 0, Math.PI * 2);
+    this.ctx.fillStyle = color;
+    this.ctx.fill();
+
+    // Draw completeness arc (shows how much of circle completed)
+    if (circularMotion.angularCoverage > 0) {
+      this.ctx.beginPath();
+      this.ctx.arc(
+        centerX,
+        centerY,
+        radius + 10,
+        -Math.PI / 2, // Start at top
+        -Math.PI / 2 + (circularMotion.angularCoverage * Math.PI / 180), // Sweep by coverage
+        false
+      );
+      this.ctx.strokeStyle = circularMotion.isCircular ?
+        'rgba(80, 227, 194, 1)' : 'rgba(255, 235, 59, 0.8)';
+      this.ctx.lineWidth = 5;
+      this.ctx.stroke();
+    }
+
+    // Draw feedback text
+    if (circularMotion.isCircular || circularMotion.quality > 0.5) {
+      this.ctx.font = 'bold 24px sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillStyle = color;
+      this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      this.ctx.lineWidth = 3;
+      this.ctx.strokeText(feedback, centerX, centerY - radius - 30);
+      this.ctx.fillText(feedback, centerX, centerY - radius - 30);
+    }
+
+    // Draw completeness percentage
+    if (circularMotion.completeness > 10) {
+      const percentText = `${Math.round(circularMotion.completeness)}%`;
+      this.ctx.font = 'bold 18px sans-serif';
+      this.ctx.fillStyle = color;
+      this.ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      this.ctx.lineWidth = 2;
+      this.ctx.strokeText(percentText, centerX, centerY);
+      this.ctx.fillText(percentText, centerX, centerY);
+    }
+
+    // Draw quality indicator (debug)
+    if (window.DEBUG_MODE) {
+      this.ctx.font = '14px monospace';
+      this.ctx.fillStyle = 'white';
+      this.ctx.strokeStyle = 'black';
+      this.ctx.lineWidth = 2;
+      const debugText = `Q: ${(circularMotion.quality * 100).toFixed(0)}% | C: ${Math.round(circularMotion.angularCoverage)}°`;
+      this.ctx.strokeText(debugText, centerX, centerY + radius + 30);
+      this.ctx.fillText(debugText, centerX, centerY + radius + 30);
+    }
+
+    this.ctx.restore();
   }
 
   drawCreatures() {
