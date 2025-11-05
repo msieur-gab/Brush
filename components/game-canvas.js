@@ -42,7 +42,8 @@ class GameCanvas extends HTMLElement {
           height: 100%;
           object-fit: cover;
           transform: scaleX(-1);
-          opacity: 0.3;
+          opacity: 0.6;
+          z-index: 1;
         }
 
         #game-canvas {
@@ -52,6 +53,7 @@ class GameCanvas extends HTMLElement {
           width: 100%;
           height: 100%;
           pointer-events: none;
+          z-index: 10;
         }
 
         .game-overlay {
@@ -72,7 +74,7 @@ class GameCanvas extends HTMLElement {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          z-index: 100;
+          z-index: 50;
           pointer-events: none;
         }
 
@@ -150,7 +152,7 @@ class GameCanvas extends HTMLElement {
           color: var(--text-light);
           text-shadow: 4px 4px 8px rgba(0, 0, 0, 0.5);
           font-weight: bold;
-          z-index: 150;
+          z-index: 500;
           animation: countdownPulse 1s ease;
           pointer-events: none;
         }
@@ -172,11 +174,22 @@ class GameCanvas extends HTMLElement {
 
         .loading {
           position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
           text-align: center;
           color: var(--text-light);
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          z-index: 1000;
+        }
+
+        .loading.hidden {
+          display: none;
         }
 
         .loading-text {
@@ -197,7 +210,7 @@ class GameCanvas extends HTMLElement {
           height: 50px;
           font-size: 1.5rem;
           cursor: pointer;
-          z-index: 100;
+          z-index: 60;
           pointer-events: all;
           transition: all var(--transition-fast);
         }
@@ -209,7 +222,7 @@ class GameCanvas extends HTMLElement {
 
       <div class="game-container">
         <!-- Loading State -->
-        <div id="loading-state" class="loading">
+        <div id="loading-state" class="loading hidden">
           <div class="spinner"></div>
           <div class="loading-text">Initializing camera...</div>
         </div>
@@ -269,9 +282,9 @@ class GameCanvas extends HTMLElement {
   async startGame(profile) {
     this.currentProfile = profile;
 
-    // Hide loading, show game
+    // Show loading screen
     const loadingState = this.querySelector('#loading-state');
-    loadingState.style.display = 'flex';
+    loadingState.classList.remove('hidden');
 
     try {
       // Initialize MediaPipe controller
@@ -282,7 +295,8 @@ class GameCanvas extends HTMLElement {
       const videoElement = this.querySelector('#camera-feed');
       await window.mediapipeController.initialize(videoElement);
 
-      loadingState.style.display = 'none';
+      // Hide loading screen
+      loadingState.classList.add('hidden');
 
       // Show countdown
       await this.showCountdown();
@@ -301,10 +315,14 @@ class GameCanvas extends HTMLElement {
 
     } catch (error) {
       console.error('Error starting game:', error);
+      // Keep loading state visible and show error
       loadingState.innerHTML = `
-        <div style="color: var(--danger-color); text-align: center;">
+        <div style="color: var(--text-light); text-align: center;">
           <div style="font-size: 3rem;">⚠️</div>
           <div class="loading-text">Failed to start camera</div>
+          <div style="font-size: 1rem; margin-top: var(--spacing-sm); opacity: 0.8;">
+            Please allow camera access and ensure good lighting
+          </div>
           <div style="margin-top: var(--spacing-md);">
             <button class="btn btn-primary" onclick="location.reload()">Try Again</button>
           </div>
