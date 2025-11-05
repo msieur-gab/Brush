@@ -1,18 +1,30 @@
 /**
  * MediaPipe Controller
- * Handles hand tracking and motion detection using MediaPipe Hands
+ * Handles hand tracking (toothbrush) and face mesh tracking (mouth position)
  */
 
 class MediaPipeController {
   constructor() {
     this.hands = null;
+    this.faceMesh = null;
     this.camera = null;
     this.videoElement = null;
+
+    // Hand tracking data
     this.currentHandPosition = null;
     this.previousHandPosition = null;
     this.velocity = { x: 0, y: 0 };
+
+    // Face/mouth tracking data
+    this.currentMouthPosition = null;
+    this.mouthWidth = 0;
+    this.mouthHeight = 0;
+
     this.isTracking = false;
     this.onResultsCallback = null;
+
+    // Frame counter for alternating detection
+    this.frameCount = 0;
   }
 
   async initialize(videoElement) {
@@ -25,7 +37,7 @@ class MediaPipeController {
       }
     });
 
-    // Configure hand detection
+    // Configure hand detection - optimized for mobile
     this.hands.setOptions({
       maxNumHands: 1, // Track only one hand (the one holding the toothbrush)
       modelComplexity: 0, // 0 = lite model for better mobile performance
@@ -33,8 +45,24 @@ class MediaPipeController {
       minTrackingConfidence: 0.5
     });
 
-    // Set up results callback
-    this.hands.onResults((results) => this.onResults(results));
+    // Initialize MediaPipe Face Mesh
+    this.faceMesh = new FaceMesh({
+      locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+      }
+    });
+
+    // Configure face mesh - optimized for performance
+    this.faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true, // Better mouth tracking
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    // Set up callbacks
+    this.hands.onResults((results) => this.onHandResults(results));
+    this.faceMesh.onResults((results) => this.onFaceResults(results));
 
     // Determine camera resolution based on screen orientation
     const isPortrait = window.innerHeight > window.innerWidth;
@@ -45,7 +73,17 @@ class MediaPipeController {
     this.camera = new Camera(this.videoElement, {
       onFrame: async () => {
         if (this.isTracking) {
-          await this.hands.send({ image: this.videoElement });
+          // Alternate between hand and face detection for performance
+          // Run face detection more frequently (every frame) and hands less frequently
+          this.frameCount++;
+
+          // Run face mesh every frame (critical for mouth position)
+          await this.faceMesh.send({ image: this.videoElement });
+
+          // Run hand detection every 2nd frame (less critical, saves performance)
+          if (this.frameCount % 2 === 0) {
+            await this.hands.send({ image: this.videoElement });
+          }
         }
       },
       width: cameraWidth,
@@ -58,7 +96,7 @@ class MediaPipeController {
     this.isTracking = true;
   }
 
-  onResults(results) {
+  onHandResults(results) {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       // Get the first hand
       const handLandmarks = results.multiHandLandmarks[0];
@@ -84,24 +122,50 @@ class MediaPipeController {
           y: this.currentHandPosition.y - this.previousHandPosition.y
         };
       }
-
-      // Calculate angle of movement (for direction detection)
-      const angle = this.calculateMovementAngle();
-
-      // Call custom callback if set
-      if (this.onResultsCallback) {
-        this.onResultsCallback({
-          position: this.currentHandPosition,
-          velocity: this.velocity,
-          angle: angle,
-          landmarks: handLandmarks
-        });
-      }
     } else {
-      // No hand detected
-      this.currentHandPosition = null;
-      this.previousHandPosition = null;
-      this.velocity = { x: 0, y: 0 };
+      // No hand detected - keep last known position briefly
+      // Don't clear immediately to avoid flickering
+    }
+  }
+
+  onFaceResults(results) {
+    if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+      const faceLandmarks = results.multiFaceLandmarks[0];
+
+      // Get mouth landmarks for position and size
+      // Mouth outline landmarks: https://github.com/google/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model_uv_visualization.png
+      // Upper lip top: 13
+      // Lower lip bottom: 14
+      // Left mouth corner: 61
+      // Right mouth corner: 291
+
+      const upperLip = faceLandmarks[13];
+      const lowerLip = faceLandmarks[14];
+      const leftCorner = faceLandmarks[61];
+      const rightCorner = faceLandmarks[291];
+
+      // Calculate mouth center
+      const mouthCenterX = (leftCorner.x + rightCorner.x) / 2;
+      const mouthCenterY = (upperLip.y + lowerLip.y) / 2;
+
+      // Calculate mouth dimensions (for spawning area)
+      const mouthWidth = Math.abs(rightCorner.x - leftCorner.x);
+      const mouthHeight = Math.abs(lowerLip.y - upperLip.y);
+
+      // Update mouth position
+      this.currentMouthPosition = {
+        x: mouthCenterX,
+        y: mouthCenterY,
+        z: (upperLip.z + lowerLip.z) / 2
+      };
+
+      // Store mouth dimensions (we'll use a multiplier for game area)
+      this.mouthWidth = mouthWidth;
+      this.mouthHeight = mouthHeight;
+
+    } else {
+      // No face detected - keep last known position
+      // This prevents the game from breaking if face temporarily lost
     }
   }
 
@@ -153,6 +217,17 @@ class MediaPipeController {
 
   getHandPosition() {
     return this.currentHandPosition;
+  }
+
+  getMouthPosition() {
+    return this.currentMouthPosition;
+  }
+
+  getMouthDimensions() {
+    return {
+      width: this.mouthWidth,
+      height: this.mouthHeight
+    };
   }
 
   getVelocity() {

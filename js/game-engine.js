@@ -181,40 +181,51 @@ class GameEngine {
   }
 
   spawnCreature() {
+    if (!this.mediapipeController) return;
+
+    // Get mouth position
+    const mouthPos = this.mediapipeController.getMouthPosition();
+    if (!mouthPos) return; // Don't spawn if we can't detect mouth
+
     // Random creature type
     const type = this.creatureTypes[Math.floor(Math.random() * this.creatureTypes.length)];
 
-    // Random side (0=top, 1=right, 2=bottom, 3=left)
-    const side = Math.floor(Math.random() * 4);
+    // Convert mouth position to screen coordinates
+    const mouthDimensions = this.mediapipeController.getMouthDimensions();
+    const mouthX = (1 - mouthPos.x) * this.logicalWidth; // Flip X for mirror
+    const mouthY = mouthPos.y * this.logicalHeight;
 
-    let x, y, targetX, targetY;
+    // Define brushing zone around mouth (3x the mouth size for gameplay area)
+    const zoneMultiplier = 3;
+    const zoneWidth = mouthDimensions.width * this.logicalWidth * zoneMultiplier;
+    const zoneHeight = mouthDimensions.height * this.logicalHeight * zoneMultiplier;
 
-    // Position based on side
-    switch (side) {
-      case 0: // Top
-        x = Math.random() * this.logicalWidth;
-        y = -type.size;
-        targetX = Math.random() * this.logicalWidth;
-        targetY = this.logicalHeight + type.size;
-        break;
-      case 1: // Right
-        x = this.logicalWidth + type.size;
-        y = Math.random() * this.logicalHeight;
-        targetX = -type.size;
-        targetY = Math.random() * this.logicalHeight;
-        break;
-      case 2: // Bottom
-        x = Math.random() * this.logicalWidth;
-        y = this.logicalHeight + type.size;
-        targetX = Math.random() * this.logicalWidth;
-        targetY = -type.size;
-        break;
-      case 3: // Left
-        x = -type.size;
-        y = Math.random() * this.logicalHeight;
-        targetX = this.logicalWidth + type.size;
-        targetY = Math.random() * this.logicalHeight;
-        break;
+    // Random position around the mouth (within the brushing zone)
+    // Using polar coordinates for circular distribution around mouth
+    const angle = Math.random() * Math.PI * 2;
+    const distance = (Math.random() * 0.5 + 0.5) * Math.max(zoneWidth, zoneHeight) / 2;
+
+    const offsetX = Math.cos(angle) * distance;
+    const offsetY = Math.sin(angle) * distance;
+
+    const x = mouthX + offsetX;
+    const y = mouthY + offsetY;
+
+    // Creatures move slowly around the mouth area (like germs on teeth)
+    // They don't have a fixed target, they orbit/float around
+    const orbitAngle = angle + Math.PI + (Math.random() - 0.5) * Math.PI / 2;
+    const orbitDistance = distance * 0.3; // Move to a position closer to mouth
+
+    const targetX = mouthX + Math.cos(orbitAngle) * orbitDistance;
+    const targetY = mouthY + Math.sin(orbitAngle) * orbitDistance;
+
+    // Determine which side of mouth (for direction arrows)
+    // 0=top, 1=right, 2=bottom, 3=left relative to mouth
+    let side;
+    if (Math.abs(offsetX) > Math.abs(offsetY)) {
+      side = offsetX > 0 ? 1 : 3; // right or left
+    } else {
+      side = offsetY > 0 ? 2 : 0; // bottom or top
     }
 
     const creature = {
@@ -228,23 +239,60 @@ class GameEngine {
       side,
       rotation: 0,
       wobble: Math.random() * Math.PI * 2,
-      health: 1
+      health: 1,
+      orbitAngle: angle, // Track orbit for continuous movement
+      orbitSpeed: (Math.random() - 0.5) * 0.02 // Slow orbital motion
     };
 
     this.creatures.push(creature);
   }
 
   updateCreatures() {
-    this.creatures.forEach(creature => {
-      // Move towards target
-      const dx = creature.targetX - creature.x;
-      const dy = creature.targetY - creature.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+    // Get current mouth position for orbital movement
+    const mouthPos = this.mediapipeController ? this.mediapipeController.getMouthPosition() : null;
+    const mouthDimensions = this.mediapipeController ? this.mediapipeController.getMouthDimensions() : { width: 0, height: 0 };
 
-      if (distance > 1) {
-        const speed = creature.type.speed;
-        creature.x += (dx / distance) * speed;
-        creature.y += (dy / distance) * speed;
+    this.creatures.forEach(creature => {
+      if (mouthPos) {
+        // Convert mouth position to screen coordinates
+        const mouthX = (1 - mouthPos.x) * this.logicalWidth;
+        const mouthY = mouthPos.y * this.logicalHeight;
+
+        // Update orbit angle for continuous circular motion
+        creature.orbitAngle += creature.orbitSpeed;
+
+        // Calculate orbital position around mouth
+        const zoneMultiplier = 3;
+        const zoneRadius = Math.max(
+          mouthDimensions.width * this.logicalWidth,
+          mouthDimensions.height * this.logicalHeight
+        ) * zoneMultiplier / 2;
+
+        const orbitRadius = zoneRadius * 0.7; // Stay within zone
+        const targetX = mouthX + Math.cos(creature.orbitAngle) * orbitRadius;
+        const targetY = mouthY + Math.sin(creature.orbitAngle) * orbitRadius;
+
+        // Move towards orbital position slowly
+        const dx = targetX - creature.x;
+        const dy = targetY - creature.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance > 1) {
+          const speed = creature.type.speed * 0.5; // Slower movement for realism
+          creature.x += (dx / distance) * speed;
+          creature.y += (dy / distance) * speed;
+        }
+      } else {
+        // Fallback: move in original direction if mouth not detected
+        const dx = creature.targetX - creature.x;
+        const dy = creature.targetY - creature.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance > 1) {
+          const speed = creature.type.speed;
+          creature.x += (dx / distance) * speed;
+          creature.y += (dy / distance) * speed;
+        }
       }
 
       // Update animation
@@ -252,14 +300,34 @@ class GameEngine {
       creature.wobble += 0.1;
     });
 
-    // Remove creatures that are off screen
+    // Remove creatures that are destroyed or too far from mouth
     this.creatures = this.creatures.filter(creature => {
+      if (creature.health <= 0) return false;
+
+      // If we have mouth position, only keep creatures near mouth
+      if (mouthPos) {
+        const mouthX = (1 - mouthPos.x) * this.logicalWidth;
+        const mouthY = mouthPos.y * this.logicalHeight;
+
+        const dx = creature.x - mouthX;
+        const dy = creature.y - mouthY;
+        const distanceFromMouth = Math.sqrt(dx * dx + dy * dy);
+
+        const zoneMultiplier = 4; // Slightly larger than spawn zone
+        const maxDistance = Math.max(
+          mouthDimensions.width * this.logicalWidth,
+          mouthDimensions.height * this.logicalHeight
+        ) * zoneMultiplier;
+
+        return distanceFromMouth < maxDistance;
+      }
+
+      // Fallback: keep creatures on screen
       const margin = 100;
       return creature.x > -margin &&
              creature.x < this.logicalWidth + margin &&
              creature.y > -margin &&
-             creature.y < this.logicalHeight + margin &&
-             creature.health > 0;
+             creature.y < this.logicalHeight + margin;
     });
   }
 
@@ -381,6 +449,9 @@ class GameEngine {
     // Clear canvas
     this.ctx.clearRect(0, 0, this.logicalWidth, this.logicalHeight);
 
+    // Draw brushing zone indicator
+    this.drawBrushingZone();
+
     // Draw brush trail
     this.drawBrushTrail();
 
@@ -392,9 +463,53 @@ class GameEngine {
 
     // Draw particles
     this.drawParticles();
+  }
 
-    // Draw direction indicators
-    this.drawDirectionIndicators();
+  drawBrushingZone() {
+    if (!this.mediapipeController) return;
+
+    const mouthPos = this.mediapipeController.getMouthPosition();
+    if (!mouthPos) return;
+
+    const mouthDimensions = this.mediapipeController.getMouthDimensions();
+
+    // Convert mouth position to screen coordinates
+    const mouthX = (1 - mouthPos.x) * this.logicalWidth;
+    const mouthY = mouthPos.y * this.logicalHeight;
+
+    // Calculate zone size
+    const zoneMultiplier = 3;
+    const zoneRadius = Math.max(
+      mouthDimensions.width * this.logicalWidth,
+      mouthDimensions.height * this.logicalHeight
+    ) * zoneMultiplier / 2;
+
+    // Draw outer circle (brushing zone indicator)
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.arc(mouthX, mouthY, zoneRadius, 0, Math.PI * 2);
+    this.ctx.strokeStyle = 'rgba(80, 227, 194, 0.3)'; // Teal color with transparency
+    this.ctx.lineWidth = 3;
+    this.ctx.stroke();
+
+    // Draw inner circle (mouth indicator)
+    this.ctx.beginPath();
+    this.ctx.arc(mouthX, mouthY, zoneRadius * 0.3, 0, Math.PI * 2);
+    this.ctx.strokeStyle = 'rgba(80, 227, 194, 0.5)';
+    this.ctx.lineWidth = 2;
+    this.ctx.stroke();
+
+    // Draw crosshair at mouth center for debugging
+    this.ctx.strokeStyle = 'rgba(80, 227, 194, 0.4)';
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(mouthX - 10, mouthY);
+    this.ctx.lineTo(mouthX + 10, mouthY);
+    this.ctx.moveTo(mouthX, mouthY - 10);
+    this.ctx.lineTo(mouthX, mouthY + 10);
+    this.ctx.stroke();
+
+    this.ctx.restore();
   }
 
   drawBrushTrail() {
