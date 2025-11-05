@@ -37,12 +37,12 @@ class MediaPipeController {
       }
     });
 
-    // Configure hand detection - optimized for mobile
+    // Configure hand detection - optimized for mobile performance
     this.hands.setOptions({
       maxNumHands: 1, // Track only one hand (the one holding the toothbrush)
-      modelComplexity: 0, // 0 = lite model for better mobile performance
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+      modelComplexity: 0, // 0 = lite model for best mobile performance
+      minDetectionConfidence: 0.3, // Lower = faster detection but less strict
+      minTrackingConfidence: 0.3 // Lower = smoother tracking, less jitter
     });
 
     // Initialize MediaPipe Face Mesh
@@ -52,12 +52,13 @@ class MediaPipeController {
       }
     });
 
-    // Configure face mesh - optimized for performance
+    // Configure face mesh - optimized for performance (mouth area only)
     this.faceMesh.setOptions({
       maxNumFaces: 1,
       refineLandmarks: true, // Better mouth tracking
       minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
+      minTrackingConfidence: 0.5,
+      selfieMode: true // Optimize for selfie camera view
     });
 
     // Set up callbacks
@@ -73,16 +74,15 @@ class MediaPipeController {
     this.camera = new Camera(this.videoElement, {
       onFrame: async () => {
         if (this.isTracking) {
-          // Alternate between hand and face detection for performance
-          // Run face detection more frequently (every frame) and hands less frequently
           this.frameCount++;
 
-          // Run face mesh every frame (critical for mouth position)
-          await this.faceMesh.send({ image: this.videoElement });
+          // PRIORITY 1: Hand detection every frame (critical for smooth brush cursor)
+          await this.hands.send({ image: this.videoElement });
 
-          // Run hand detection every 2nd frame (less critical, saves performance)
-          if (this.frameCount % 2 === 0) {
-            await this.hands.send({ image: this.videoElement });
+          // PRIORITY 2: Face mesh every 3rd frame (mouth position changes slowly)
+          // Mouth doesn't move as fast as hands, so less frequent updates are fine
+          if (this.frameCount % 3 === 0) {
+            await this.faceMesh.send({ image: this.videoElement });
           }
         }
       },
