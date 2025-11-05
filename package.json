@@ -1,0 +1,23 @@
+{
+  "name": "brush-game",
+  "version": "1.0.0",
+  "description": "Gamified toothbrushing app using MediaPipe for motion detection",
+  "main": "index.html",
+  "scripts": {
+    "dev": "python3 -m http.server 8000",
+    "start": "python3 -m http.server 8000"
+  },
+  "keywords": [
+    "toothbrush",
+    "game",
+    "mediapipe",
+    "kids",
+    "gamification"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dexie": "^3.2.4"
+  },
+  "devDependencies": {}
+}
